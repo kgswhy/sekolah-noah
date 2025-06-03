@@ -13,13 +13,17 @@ return new class extends Migration
     {
         Schema::create('payrolls', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('employee_id')->unsigned();
+            $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
             $table->date('date');
-            $table->bigInteger('amount');
+            $table->decimal('amount', 12, 2);
             $table->enum('status', ['paid', 'unpaid'])->default('unpaid');
+            $table->text('notes')->nullable();
             $table->timestamps();
 
-            $table->foreign('employee_id')->references('id')->on('employees')->onDelete('cascade');
+            // Tambahkan index untuk pencarian cepat
+            $table->index('employee_id');
+            $table->index('date');
+            $table->index('status');
         });
     }
 

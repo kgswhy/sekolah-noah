@@ -1,98 +1,98 @@
-@extends('layouts/master-dashboard')
+@extends('layouts.master-dashboard')
 
-@section('content-header')
-<div class="d-flex align-items-center">
-    <div class="me-auto">
-        <h3 class="page-title">Data Payroll</h3>
-        <div class="d-inline-block align-items-center">
-            <nav>
-                <ol class="breadcrumb">
-                    <li class="breadcrumb-item"><a href="#"><i class="las la-home"></i></a></li>
-                    <li class="breadcrumb-item" aria-current="page">HRD</li>
-                    <li class="breadcrumb-item active" aria-current="page">Data Payroll</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
-    <div class="ms-auto">
-        <form method="GET" action="/payroll" class="d-flex">
-            <input type="month" name="monthyear" class="form-control" value="{{ request('monthyear') }}" required>
-            <button type="submit" class="btn btn-primary ms-2">Tampilkan</button>
-        </form>
-    </div>
-</div>
-@endsection
+@section('title', 'Daftar Slip Gaji')
 
 @section('content')
+<div class="container-fluid">
+    @if(session('success'))
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        {{ session('success') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    @endif
 
-<div class="row">
-    <div class="col-md-12">
-        <!-- Card untuk Tabel Data Payroll -->
-        <div class="card">
-            <div class="card-body">
-                <table id="payrollTable" class="table table-bordered">
+    @if(session('error'))
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ session('error') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    @endif
+
+    <div class="card">
+        <div class="card-header d-flex align-items-center">
+            <h5 class="mb-0">Payroll Slip Gaji</h5>
+            <form action="{{ route('payroll.generate') }}" method="POST" class="d-inline ms-auto">
+                @csrf
+                <button type="submit" class="btn btn-primary" onclick="return confirm('Apakah Anda yakin ingin generate payroll untuk semua karyawan aktif?')">
+                    Generate Payroll
+                </button>
+            </form>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
                     <thead>
                         <tr>
-                            <th>ID</th>
-                            <th>Tanggal</th>
-                            <th>Karyawan</th>
-                            <th>Nominal</th>
+                            <th>No</th>
+                            <th>NIK</th>
+                            <th>Nama</th>
+                            <th>Jabatan</th>
+                            <th>Divisi</th>
+                            <th>Periode</th>
+                            <th>Total</th>
                             <th>Status</th>
-                            <th>Action</th>
+                            <th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Data Payroll akan ditambahkan disini -->
-                        @foreach($payrolls as $payroll)
-                            <tr>
-                                <td>{{ $payroll->id }}</td>
-                                <td>{{ $payroll->date }}</td>
-                                <td>{{ $payroll->employee->name }}</td>
-                                <td>Rp {{ number_format($payroll->amount, 0, ',', '.') }}</td>
-                                <td>
-                                    <select class="form-control form-control-sm" name="status" onchange="updateStatus({{ $payroll->id }}, this.value)">
-                                        <option value="Unpaid" {{ $payroll->status == 'Unpaid' ? 'selected' : '' }}>Unpaid</option>
-                                        <option value="Paid" {{ $payroll->status == 'Paid' ? 'selected' : '' }}>Paid</option>
-                                    </select>
-                                </td>
-                                <td>
-                                    <a href="/payroll/slip/{{ $payroll->id }}" class="btn btn-info btn-sm" target="_blank">Slip Gaji</a>
-                                </td>
-                            </tr>
-                        @endforeach
-                        <!-- Tambahkan data lainnya sesuai kebutuhan -->
+                        @forelse($salarySlips as $slip)
+                        <tr>
+                            <td>{{ $loop->iteration }}</td>
+                            <td>{{ $slip->employee->employee_number }}</td>
+                            <td>{{ $slip->employee->full_name }}</td>
+                            <td>{{ $slip->employee->position }}</td>
+                            <td>{{ $slip->employee->division }}</td>
+                            <td>{{ $slip->date->format('F Y') }}</td>
+                            <td class="text-end fw-bold">
+                                Rp {{ number_format($slip->components->sum('amount'), 0, ',', '.') }}
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ $slip->status === 'paid' ? 'success' : 'warning' }}">
+                                    {{ $slip->status === 'paid' ? 'Dibayar' : 'Belum Dibayar' }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{{ route('payroll.edit', $slip) }}" class="btn btn-sm btn-info">
+                                        Edit
+                                    </a>
+                                    @if($slip->status === 'paid')
+                                        <a href="{{ route('payroll.download', $slip) }}" class="btn btn-sm btn-secondary">
+                                            Download
+                                        </a>
+                                    @endif
+                                    <form action="{{ route('payroll.update-status', $slip) }}" method="POST" class="d-inline">
+                                        @csrf
+                                        @method('PUT')
+                                        <input type="hidden" name="status" value="{{ $slip->status === 'paid' ? 'unpaid' : 'paid' }}">
+                                        <button type="submit" class="btn btn-sm {{ $slip->status === 'paid' ? 'btn-warning' : 'btn-success' }}"
+                                            onclick="return confirm('Apakah Anda yakin ingin {{ $slip->status === 'paid' ? 'membatalkan' : 'menandai' }} pembayaran slip gaji ini?')">
+                                            {{ $slip->status === 'paid' ? 'Batalkan Pembayaran' : 'Tandai Dibayar' }}
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="9" class="text-center">Tidak ada data</td>
+                        </tr>
+                        @endforelse
                     </tbody>
+                    
                 </table>
             </div>
         </div>
     </div>
 </div>
-
-@endsection
-
-@section('script')
-<script>
-    $(document).ready(function() {
-        $('#payrollTable').DataTable();
-    });
-
-    // Update status payroll
-    function updateStatus(payrollId, status) {
-        $.ajax({
-            url: '/payroll/update-status',
-            method: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                payroll_id: payrollId,
-                status: status
-            },
-            success: function(response) {
-                alert('Status berhasil diperbarui!');
-            },
-            error: function(xhr, status, error) {
-                alert('Terjadi kesalahan saat memperbarui status!');
-            }
-        });
-    }
-</script>
 @endsection

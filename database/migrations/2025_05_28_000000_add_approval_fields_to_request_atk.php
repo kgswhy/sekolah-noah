@@ -8,11 +8,17 @@ return new class extends Migration
 {
     public function up()
     {
-        // No-op: All intended columns already exist. This migration is intentionally left blank.
+        Schema::table('request_atk', function (Blueprint $table) {
+            $table->foreignId('approved_by')->nullable()->after('status')->constrained('users');
+            $table->timestamp('approved_at')->nullable()->after('approved_by');
+        });
     }
 
     public function down()
     {
-        // No-op: Nothing to rollback.
+        Schema::table('request_atk', function (Blueprint $table) {
+            $table->dropForeign(['approved_by']);
+            $table->dropColumn(['approved_by', 'approved_at']);
+        });
     }
 }; 

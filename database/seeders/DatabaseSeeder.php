@@ -42,5 +42,13 @@ class DatabaseSeeder extends Seeder
                 'role_id' => $adminRole->id,
             ]);
         }
+
+        $this->call([
+            RoleSeeder::class,
+            UserSeeder::class,
+            EmployeeSeeder::class,
+            AbsenceSeeder::class,
+            PayrollSeeder::class,
+        ]);
     }
 }

@@ -13,13 +13,15 @@ return new class extends Migration
     {
         Schema::create('payroll_components', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('payroll_id')->unsigned();
+            $table->foreignId('payroll_id')->constrained('payrolls')->onDelete('cascade');
             $table->string('title');
             $table->text('description')->nullable();
-            $table->bigInteger('amount');
+            $table->decimal('amount', 12, 2);
             $table->timestamps();
 
-            $table->foreign('payroll_id')->references('id')->on('payrolls')->onDelete('cascade');
+            // Tambahkan index untuk pencarian cepat
+            $table->index('payroll_id');
+            $table->index('title');
         });
     }
 

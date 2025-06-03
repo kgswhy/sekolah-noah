@@ -6,7 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class Absence extends Model
 {
-    protected $guarded = ['id'];
+    protected $fillable = [
+        'schedule_id',
+        'clock_in',
+        'clock_out',
+        'status',
+        'late',
+    ];
 
     public function schedule()
     {

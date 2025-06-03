@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\SalaryComponent;
 use App\Models\Employee;
+use App\Models\SalarySlip;
+use App\Models\SalarySlipComponent;
 
 class SalaryComponentController extends Controller
 {
@@ -56,12 +58,35 @@ class SalaryComponentController extends Controller
         ]);
 
         $salaryComponent = SalaryComponent::findOrFail($id);
+        $oldTitle = $salaryComponent->title;
+        
+        // Update komponen gaji
         $salaryComponent->title = $validatedData['title'];
         $salaryComponent->description = $validatedData['description'];
         $salaryComponent->amount = $validatedData['amount'];
         $salaryComponent->save();
 
-        return redirect()->route('salary-components.index', $employeeId)->with('success', 'Komponen Gaji berhasil diperbarui!');
+        // Update komponen gaji di payroll yang belum dibayar
+        $unpaidPayrolls = SalarySlip::where('employee_id', $employeeId)
+            ->where('status', 'unpaid')
+            ->get();
+
+        foreach ($unpaidPayrolls as $payroll) {
+            $payrollComponent = SalarySlipComponent::where('payroll_id', $payroll->id)
+                ->where('title', $oldTitle)
+                ->first();
+
+            if ($payrollComponent) {
+                $payrollComponent->update([
+                    'title' => $validatedData['title'],
+                    'description' => $validatedData['description'],
+                    'amount' => $validatedData['amount']
+                ]);
+            }
+        }
+
+        return redirect()->route('salary-components.index', $employeeId)
+            ->with('success', 'Komponen Gaji berhasil diperbarui!');
     }
 
     public function destroy($employeeId, $id)

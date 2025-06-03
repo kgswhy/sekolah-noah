@@ -6,5 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class Shift extends Model
 {
-    protected $guarded = ['id'];
+    protected $fillable = [
+        'title',
+        'start_time',
+        'end_time'
+    ];
+
+    public function schedules()
+    {
+        return $this->hasMany(Schedule::class);
+    }
 }
