@@ -20,15 +20,15 @@ class RequestAtk extends Model
         'satuan',
         'keterangan',
         'status',
+        'current_approval_level',
+        'department_type',
+        'final_status',
+        'approval_history',
         'approved_by',
         'approved_at',
         'rejected_message',
         'rejected_by',
         'rejected_at',
-        'current_approval_level',
-        'final_status',
-        'approval_history',
-        'department_type'
     ];
     
     protected $casts = [

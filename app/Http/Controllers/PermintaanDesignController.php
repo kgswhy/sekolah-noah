@@ -15,10 +15,30 @@ class PermintaanDesignController extends Controller
     public function index()
     {
         $user = Auth::user();
-        // Jika admin tampilkan semua, jika bukan hanya milik user
-        $designs = $user->role_id == 1
-            ? PermintaanDesign::latest()->get()
-            : PermintaanDesign::where('user_id', $user->id)->latest()->get();
+
+        // Get all requests if user is admin
+        if ($user->isAdmin()) {
+            $designs = PermintaanDesign::with('user')->latest()->get();
+        } else {
+            // Get the department types this user can approve
+            $departmentTypes = $user->approvers()
+                ->where('module', 'permintaan-design')
+                ->where('active', true)
+                ->pluck('department_type')
+                ->unique();
+
+            // If user is an approver, show only requests from their department type
+            if ($departmentTypes->isNotEmpty()) {
+                $designs = PermintaanDesign::with('user')
+                    ->whereIn('department_type', $departmentTypes)
+                    ->latest()
+                    ->get();
+            } else {
+                // If user is not an approver, show only their own requests
+                $designs = PermintaanDesign::where('user_id', $user->id)->latest()->get();
+            }
+        }
+
         return view('pages.permintaan-design.index', compact('designs'));
     }
 
@@ -53,10 +73,15 @@ class PermintaanDesignController extends Controller
             'kategori_lainnya' => 'nullable|string',
             'dokumen_pendukung' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
         ]);
+
         $dokumen = null;
         if ($request->hasFile('dokumen_pendukung')) {
             $dokumen = $request->file('dokumen_pendukung')->store('permintaan_design', 'public');
         }
+
+        // Determine department type based on division
+        $departmentType = ($request->divisi === 'Akademik') ? 'akademik' : 'non-akademik';
+
         PermintaanDesign::create([
             'user_id' => $user->id,
             'nama' => $user->name,
@@ -69,8 +94,11 @@ class PermintaanDesignController extends Controller
             'deskripsi' => $request->deskripsi,
             'tanggal_deadline' => $request->tanggal_deadline,
             'dokumen_pendukung' => $dokumen,
-            'status' => 'Proses',
+            'status' => 'pending',
+            'current_approval_level' => 1,
+            'department_type' => $departmentType,
         ]);
+
         return redirect()->route('permintaan-design.index')->with('success', 'Permintaan design berhasil dikirim!');
     }
 
@@ -134,5 +162,54 @@ class PermintaanDesignController extends Controller
         }
         $permintaan_design->delete();
         return redirect()->route('permintaan-design.index')->with('success', 'Permintaan design berhasil dihapus!');
+    }
+
+    /**
+     * Approve the specified design request
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function approve($id)
+    {
+        $user = Auth::user();
+        $request = PermintaanDesign::findOrFail($id);
+
+        if (!$request->canBeApprovedBy($user)) {
+            return redirect()->route('permintaan-design.index')
+                ->with('error', 'Anda tidak memiliki hak untuk menyetujui permintaan ini.');
+        }
+
+        $request->approve($user->id, 'Approved');
+
+        return redirect()->route('permintaan-design.index')
+            ->with('success', 'Permintaan design berhasil disetujui.');
+    }
+
+    /**
+     * Reject the specified design request with a reason
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function reject(Request $request, $id)
+    {
+        $user = Auth::user();
+        $designRequest = PermintaanDesign::findOrFail($id);
+
+        if (!$designRequest->canBeApprovedBy($user)) {
+            return redirect()->route('permintaan-design.index')
+                ->with('error', 'Anda tidak memiliki hak untuk menolak permintaan ini.');
+        }
+
+        $request->validate([
+            'rejected_message' => 'required|string|max:1000',
+        ]);
+
+        $designRequest->reject($user->id, $request->rejected_message);
+
+        return redirect()->route('permintaan-design.index')
+            ->with('success', 'Permintaan design telah ditolak.');
     }
 }

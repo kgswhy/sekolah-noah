@@ -51,12 +51,17 @@ class IzinBriefController extends Controller
             'dokumen' => 'nullable|file|mimes:pdf,jpg,png|max:2048',
         ]);
 
+        $employee = Auth::user()->employee;
+
         // Handle file upload for dokumen
         if ($request->hasFile('dokumen')) {
             $dokumenPath = $request->file('dokumen')->store('private/dokumen_brief');
         } else {
             $dokumenPath = null;
         }
+
+        // Determine department type based on employee division
+        $departmentType = strtolower($employee->division) === 'akademik' ? 'akademik' : 'non-akademik';
 
         // Store the brief leave request data in the database
         IzinBrief::create([
@@ -66,6 +71,8 @@ class IzinBriefController extends Controller
             'keperluan' => $request->keperluan,
             'dokumen' => $dokumenPath,
             'status' => 'pending',
+            'current_approval_level' => 1,
+            'department_type' => $departmentType
         ]);
 
         return redirect('/brief-absen')->with('success', 'Izin brief berhasil diajukan!');
@@ -224,17 +231,57 @@ class IzinBriefController extends Controller
      */
     public function approve($id)
     {
-        // Check if current user is an approver for brief-absen
-        if (!Auth::user()->isApproverFor('brief-absen')) {
-            return redirect()->route('brief.index')
-                ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan izin brief.');
-        }
-        
+        $user = Auth::user();
         $brief = IzinBrief::findOrFail($id);
-        $brief->status = 'approved';
-        $brief->save();
+        $currentLevel = $brief->current_approval_level;
 
-        return redirect('/brief-absen')->with('success', 'Pengajuan izin brief disetujui.');
+        // Check if current user is approver at current level
+        $isApprover = \App\Models\Approver::where('module', 'brief-absen')
+            ->where('department_type', $brief->department_type)
+            ->where('active', true)
+            ->where('user_id', $user->id)
+            ->where('approval_level', $currentLevel)
+            ->exists();
+
+        if (!$isApprover) {
+            return redirect('/brief-absen')
+                ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan ini di level saat ini.');
+        }
+
+        // Check if this is the final approval level
+        $maxLevel = \App\Models\Approver::where('module', 'brief-absen')
+            ->where('department_type', $brief->department_type)
+            ->where('active', true)
+            ->max('approval_level');
+
+        // Add to approval history
+        $history = $brief->approval_history ?? [];
+        $history[] = [
+            'level' => $currentLevel,
+            'status' => 'approved',
+            'approver_name' => $user->name,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'notes' => null
+        ];
+
+        if ($currentLevel >= $maxLevel) {
+            // Final approval
+            $brief->update([
+                'status' => 'approved',
+                'final_status' => 'approved',
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+                'approval_history' => $history
+            ]);
+        } else {
+            // Move to next level
+            $brief->update([
+                'current_approval_level' => $currentLevel + 1,
+                'approval_history' => $history
+            ]);
+        }
+
+        return redirect('/brief-absen')->with('success', 'Pengajuan izin brief berhasil disetujui.');
     }
 
     /**
@@ -246,20 +293,50 @@ class IzinBriefController extends Controller
      */
     public function reject(Request $request, $id)
     {
-        // Check if current user is an approver for brief-absen
-        if (!Auth::user()->isApproverFor('brief-absen')) {
+        $user = Auth::user();
+        $brief = IzinBrief::findOrFail($id);
+        $currentLevel = $brief->current_approval_level;
+
+        // Check if user is authorized to reject at current level
+        $isApprover = \App\Models\Approver::where('module', 'brief-absen')
+            ->where('department_type', $brief->department_type)
+            ->where('active', true)
+            ->where('user_id', $user->id)
+            ->where('approval_level', $currentLevel)
+            ->exists();
+
+        if (!$isApprover) {
             return redirect('/brief-absen')
-                ->with('error', 'Anda tidak memiliki hak untuk menolak pengajuan izin brief.');
+                ->with('error', 'Anda tidak memiliki akses untuk menolak pengajuan ini di level saat ini.');
         }
-        
+
+        if ($brief->status !== 'pending') {
+            return redirect('/brief-absen')
+                ->with('error', 'Pengajuan sudah diproses sebelumnya.');
+        }
+
         $request->validate([
             'rejected_message' => 'required|string|max:1000',
         ]);
 
-        $brief = IzinBrief::findOrFail($id);
-        $brief->status = 'rejected';
-        $brief->rejected_message = $request->rejected_message;
-        $brief->save();
+        // Add to approval history
+        $history = $brief->approval_history ?? [];
+        $history[] = [
+            'level' => $currentLevel,
+            'status' => 'rejected',
+            'approver_name' => $user->name,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'notes' => $request->rejected_message
+        ];
+
+        $brief->update([
+            'status' => 'rejected',
+            'final_status' => 'rejected',
+            'rejected_by' => $user->id,
+            'rejected_message' => $request->rejected_message,
+            'rejected_at' => now(),
+            'approval_history' => $history
+        ]);
 
         return redirect('/brief-absen')->with('success', 'Pengajuan izin brief telah ditolak dengan pesan.');
     }

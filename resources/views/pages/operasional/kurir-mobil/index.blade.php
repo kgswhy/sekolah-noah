@@ -20,6 +20,20 @@
 @endsection
 
 @section('content')
+@if (session('success'))
+    <div class="alert alert-success alert-dismissible fade show">
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        {{ session('success') }}
+    </div>
+@endif
+
+@if (session('error'))
+    <div class="alert alert-danger alert-dismissible fade show">
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        {{ session('error') }}
+    </div>
+@endif
+
 <div class="row">
     <div class="col-md-12">
         <!-- Tabel Request Kurir -->
@@ -37,7 +51,7 @@
                             <th>Jam</th>
                             <th>Tujuan</th>
                             <th>Keperluan</th>
-                            <th>Keterangan</th>
+                            <th>Status</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
@@ -48,26 +62,111 @@
                             <td>{{ $r->divisi }}</td>
                             <td>{{ $r->request_by }}</td>
                             <td>{{ $r->jenis }}</td>
-                            <td>{{ $r->tanggal }}</td>
+                            <td>{{ \Carbon\Carbon::parse($r->tanggal)->format('d-m-Y') }}</td>
                             <td>{{ $r->dari_jam }} - {{ $r->sampai_jam }}</td>
                             <td>{{ $r->tujuan }}</td>
                             <td>{{ $r->keperluan }}</td>
-                            <td>{{ $r->keterangan }}</td>
                             <td>
-                                <a href="{{ route('operasional.edit', $r->id) }}" class="btn btn-warning btn-sm">Edit</a>
-                                <a href="{{ route('operasional.destroy', $r->id) }}"
-                                   onclick="return confirm('Yakin ingin menghapus data ini?')"
-                                   class="btn btn-danger btn-sm">Hapus</a>
+                                @if ($r->status === 'pending')
+                                    <span class="badge bg-warning text-dark">
+                                        Menunggu Persetujuan (Level {{ $r->current_approval_level ?? 1 }})
+                                    </span>
+                                @elseif ($r->status === 'approved')
+                                    <span class="badge bg-success">Disetujui</span>
+                                @elseif ($r->status === 'rejected')
+                                    <span class="badge bg-danger">Ditolak</span>
+                                @else
+                                    <span class="badge bg-secondary">{{ ucfirst($r->status) }}</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{{ route('operasional.edit', $r->id) }}" class="btn btn-warning btn-sm">
+                                        <i class="las la-edit"></i> Edit
+                                    </a>
+                                    <a href="{{ route('operasional.destroy', $r->id) }}"
+                                       onclick="return confirm('Yakin ingin menghapus data ini?')"
+                                       class="btn btn-danger btn-sm">
+                                        <i class="las la-trash"></i> Hapus
+                                    </a>
 
-                                   
-                                   <button type="button" class="btn btn-success btn-sm"
-                                                            
-                                   >Setuju
-                               </button>
-                               <button type="button" class="btn btn-danger btn-sm"
-                                   >
-                                   Tolak
-                               </button>
+                                    @if($r->status === 'pending' && $r->canBeApprovedBy(auth()->user()))
+                                        <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approveModalKurir{{ $r->id }}">
+                                            <i class="las la-check"></i> Setuju
+                                        </button>
+                                        <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#rejectModalKurir{{ $r->id }}">
+                                            <i class="las la-times"></i> Tolak
+                                        </button>
+                                    @endif
+                                </div>
+
+                                <!-- Approve Modal for Kurir -->
+                                @if($r->status === 'pending' && $r->canBeApprovedBy(auth()->user()))
+                                <div class="modal fade" id="approveModalKurir{{ $r->id }}" tabindex="-1" aria-labelledby="approveModalKurirLabel{{ $r->id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form action="{{ route('operasional.approve', $r->id) }}" method="POST">
+                                                @csrf
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="approveModalKurirLabel{{ $r->id }}">Setujui Request Kurir</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Apakah Anda yakin ingin menyetujui request kurir berikut:</p>
+                                                    <ul>
+                                                        <li><strong>Request By:</strong> {{ $r->request_by }}</li>
+                                                        <li><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($r->tanggal)->format('d M Y') }}</li>
+                                                        <li><strong>Jam:</strong> {{ $r->dari_jam }} - {{ $r->sampai_jam }}</li>
+                                                        <li><strong>Tujuan:</strong> {{ $r->tujuan }}</li>
+                                                        <li><strong>Keperluan:</strong> {{ $r->keperluan }}</li>
+                                                    </ul>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                                                    <button type="submit" class="btn btn-success">
+                                                        <i class="las la-check"></i> Setujui
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Reject Modal for Kurir -->
+                                <div class="modal fade" id="rejectModalKurir{{ $r->id }}" tabindex="-1" aria-labelledby="rejectModalKurirLabel{{ $r->id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form action="{{ route('operasional.reject', $r->id) }}" method="POST">
+                                                @csrf
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="rejectModalKurirLabel{{ $r->id }}">Tolak Request Kurir</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Anda akan menolak request kurir berikut:</p>
+                                                    <ul>
+                                                        <li><strong>Request By:</strong> {{ $r->request_by }}</li>
+                                                        <li><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($r->tanggal)->format('d M Y') }}</li>
+                                                        <li><strong>Tujuan:</strong> {{ $r->tujuan }}</li>
+                                                        <li><strong>Keperluan:</strong> {{ $r->keperluan }}</li>
+                                                    </ul>
+                                                    
+                                                    <div class="mb-3">
+                                                        <label for="rejected_message_kurir{{ $r->id }}" class="form-label">Alasan Penolakan <span class="text-danger">*</span></label>
+                                                        <textarea name="rejected_message" id="rejected_message_kurir{{ $r->id }}" class="form-control" rows="4" required placeholder="Masukkan alasan penolakan..."></textarea>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                                                    <button type="submit" class="btn btn-danger">
+                                                        <i class="las la-times"></i> Tolak
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                @endif
                             </td>
                         </tr>
                         @endforeach
@@ -91,7 +190,7 @@
                             <th>Jam</th>
                             <th>Tujuan</th>
                             <th>Keperluan</th>
-                            <th>Keterangan</th>
+                            <th>Status</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
@@ -102,26 +201,111 @@
                             <td>{{ $r->divisi }}</td>
                             <td>{{ $r->request_by }}</td>
                             <td>{{ $r->jenis }}</td>
-                            <td>{{ $r->tanggal }}</td>
+                            <td>{{ \Carbon\Carbon::parse($r->tanggal)->format('d-m-Y') }}</td>
                             <td>{{ $r->dari_jam }} - {{ $r->sampai_jam }}</td>
                             <td>{{ $r->tujuan }}</td>
                             <td>{{ $r->keperluan }}</td>
-                            <td>{{ $r->keterangan }}</td>
                             <td>
-                                <a href="{{ route('operasional.edit', $r->id) }}" class="btn btn-warning btn-sm">Edit</a>
-                                <a href="{{ route('operasional.destroy', $r->id) }}"
-                                   onclick="return confirm('Yakin ingin menghapus data ini?')"
-                                   class="btn btn-danger btn-sm">Hapus</a>
-                                    
-                                   <button type="button" class="btn btn-success btn-sm"
-                                                            
-                                   >Setuju
-                               </button>
-                               <button type="button" class="btn btn-danger btn-sm"
-                                   >
-                                   Tolak
-                               </button>
-                                   
+                                @if ($r->status === 'pending')
+                                    <span class="badge bg-warning text-dark">
+                                        Menunggu Persetujuan (Level {{ $r->current_approval_level ?? 1 }})
+                                    </span>
+                                @elseif ($r->status === 'approved')
+                                    <span class="badge bg-success">Disetujui</span>
+                                @elseif ($r->status === 'rejected')
+                                    <span class="badge bg-danger">Ditolak</span>
+                                @else
+                                    <span class="badge bg-secondary">{{ ucfirst($r->status) }}</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{{ route('operasional.edit', $r->id) }}" class="btn btn-warning btn-sm">
+                                        <i class="las la-edit"></i> Edit
+                                    </a>
+                                    <a href="{{ route('operasional.destroy', $r->id) }}"
+                                       onclick="return confirm('Yakin ingin menghapus data ini?')"
+                                       class="btn btn-danger btn-sm">
+                                        <i class="las la-trash"></i> Hapus
+                                    </a>
+                                        
+                                    @if($r->status === 'pending' && $r->canBeApprovedBy(auth()->user()))
+                                        <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approveModalMobil{{ $r->id }}">
+                                            <i class="las la-check"></i> Setuju
+                                        </button>
+                                        <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#rejectModalMobil{{ $r->id }}">
+                                            <i class="las la-times"></i> Tolak
+                                        </button>
+                                    @endif
+                                </div>
+
+                                <!-- Approve Modal for Mobil -->
+                                @if($r->status === 'pending' && $r->canBeApprovedBy(auth()->user()))
+                                <div class="modal fade" id="approveModalMobil{{ $r->id }}" tabindex="-1" aria-labelledby="approveModalMobilLabel{{ $r->id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form action="{{ route('operasional.approve', $r->id) }}" method="POST">
+                                                @csrf
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="approveModalMobilLabel{{ $r->id }}">Setujui Request Mobil</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Apakah Anda yakin ingin menyetujui request mobil berikut:</p>
+                                                    <ul>
+                                                        <li><strong>Request By:</strong> {{ $r->request_by }}</li>
+                                                        <li><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($r->tanggal)->format('d M Y') }}</li>
+                                                        <li><strong>Jam:</strong> {{ $r->dari_jam }} - {{ $r->sampai_jam }}</li>
+                                                        <li><strong>Tujuan:</strong> {{ $r->tujuan }}</li>
+                                                        <li><strong>Keperluan:</strong> {{ $r->keperluan }}</li>
+                                                    </ul>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                                                    <button type="submit" class="btn btn-success">
+                                                        <i class="las la-check"></i> Setujui
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Reject Modal for Mobil -->
+                                <div class="modal fade" id="rejectModalMobil{{ $r->id }}" tabindex="-1" aria-labelledby="rejectModalMobilLabel{{ $r->id }}" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form action="{{ route('operasional.reject', $r->id) }}" method="POST">
+                                                @csrf
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title" id="rejectModalMobilLabel{{ $r->id }}">Tolak Request Mobil</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Anda akan menolak request mobil berikut:</p>
+                                                    <ul>
+                                                        <li><strong>Request By:</strong> {{ $r->request_by }}</li>
+                                                        <li><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($r->tanggal)->format('d M Y') }}</li>
+                                                        <li><strong>Tujuan:</strong> {{ $r->tujuan }}</li>
+                                                        <li><strong>Keperluan:</strong> {{ $r->keperluan }}</li>
+                                                    </ul>
+                                                    
+                                                    <div class="mb-3">
+                                                        <label for="rejected_message_mobil{{ $r->id }}" class="form-label">Alasan Penolakan <span class="text-danger">*</span></label>
+                                                        <textarea name="rejected_message" id="rejected_message_mobil{{ $r->id }}" class="form-control" rows="4" required placeholder="Masukkan alasan penolakan..."></textarea>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                                                    <button type="submit" class="btn btn-danger">
+                                                        <i class="las la-times"></i> Tolak
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                @endif
                             </td>
                         </tr>
                         @endforeach
@@ -140,8 +324,18 @@
 
 <script>
     $(document).ready(function () {
-        $('#kurirTable').DataTable();
-        $('#mobilTable').DataTable();
+        $('#kurirTable').DataTable({
+            order: [[8, 'desc']], // Order by status column
+            columnDefs: [
+                { orderable: false, targets: [9] } // Disable sorting on action column
+            ]
+        });
+        $('#mobilTable').DataTable({
+            order: [[8, 'desc']], // Order by status column
+            columnDefs: [
+                { orderable: false, targets: [9] } // Disable sorting on action column
+            ]
+        });
     });
 </script>
 @endsection

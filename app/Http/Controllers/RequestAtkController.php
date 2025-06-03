@@ -28,6 +28,8 @@ class RequestAtkController extends Controller
 
     public function store(Request $request)
     {
+        $employee = Auth::user()->employee;
+        
         $validated = $request->validate([
             'nama_lengkap' => 'required',
             'nomor_induk_karyawan' => 'required',
@@ -41,7 +43,15 @@ class RequestAtkController extends Controller
             'keterangan' => 'required|array',
         ]);
 
+        // Determine department type based on employee division
+        $departmentType = 'non-akademik';
+        if ($employee && strtolower($employee->division) === 'akademik') {
+            $departmentType = 'akademik';
+        }
+
         $validated['status'] = 'pending';
+        $validated['current_approval_level'] = 1;
+        $validated['department_type'] = $departmentType;
 
         RequestAtk::create($validated);
 
@@ -58,7 +68,7 @@ class RequestAtkController extends Controller
     {
         $user = Auth::user();
         $approver = Approver::where('user_id', $user->id)
-            ->where('module', 'atk')
+            ->where('module', 'request-atk')
             ->where('department_type', $requestAtk->department_type)
             ->where('approval_level', $requestAtk->current_approval_level)
             ->first();
@@ -81,7 +91,7 @@ class RequestAtkController extends Controller
 
             // Check if this is the final approval level
             $nextLevel = $requestAtk->current_approval_level + 1;
-            $hasNextLevel = Approver::where('module', 'atk')
+            $hasNextLevel = Approver::where('module', 'request-atk')
                 ->where('department_type', $requestAtk->department_type)
                 ->where('approval_level', $nextLevel)
                 ->exists();
@@ -106,7 +116,7 @@ class RequestAtkController extends Controller
     {
         $user = Auth::user();
         $approver = Approver::where('user_id', $user->id)
-            ->where('module', 'atk')
+            ->where('module', 'request-atk')
             ->where('department_type', $requestAtk->department_type)
             ->where('approval_level', $requestAtk->current_approval_level)
             ->first();

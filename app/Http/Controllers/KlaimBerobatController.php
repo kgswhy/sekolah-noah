@@ -55,12 +55,17 @@ class KlaimBerobatController extends Controller
             'bukti_pembayaran' => 'required|file|mimes:pdf,jpg,jpeg,png|max:2048',
         ]);
 
+        $employee = Auth::user()->employee;
+
         // Handle file upload for bukti_pembayaran
         if ($request->hasFile('bukti_pembayaran')) {
             $buktiPath = $request->file('bukti_pembayaran')->store('private/klaim_berobat');
         } else {
             $buktiPath = null;
         }
+
+        // Determine department type based on employee division
+        $departmentType = strtolower($employee->division) === 'akademik' ? 'akademik' : 'non-akademik';
 
         // Store the medical claim data in the database
         KlaimBerobat::create([
@@ -74,6 +79,8 @@ class KlaimBerobatController extends Controller
             'biaya' => $request->biaya,
             'bukti_pembayaran' => $buktiPath,
             'status' => 'pending',
+            'current_approval_level' => 1,
+            'department_type' => $departmentType
         ]);
 
         return redirect()->route('klaim.index')->with('success', 'Klaim berobat berhasil diajukan!');
@@ -240,17 +247,57 @@ class KlaimBerobatController extends Controller
      */
     public function approve($id)
     {
-        // Check if current user is an approver for klaim-berobat
-        if (!Auth::user()->isApproverFor('klaim-berobat')) {
-            return redirect()->route('klaim.index')
-                ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan klaim berobat.');
-        }
-        
+        $user = Auth::user();
         $klaim = KlaimBerobat::findOrFail($id);
-        $klaim->status = 'approved';
-        $klaim->save();
+        $currentLevel = $klaim->current_approval_level;
 
-        return redirect()->route('klaim.index')->with('success', 'Pengajuan klaim berobat disetujui.');
+        // Check if current user is approver at current level
+        $isApprover = \App\Models\Approver::where('module', 'klaim-berobat')
+            ->where('department_type', $klaim->department_type)
+            ->where('active', true)
+            ->where('user_id', $user->id)
+            ->where('approval_level', $currentLevel)
+            ->exists();
+
+        if (!$isApprover) {
+            return redirect()->route('klaim.index')
+                ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan ini di level saat ini.');
+        }
+
+        // Check if this is the final approval level
+        $maxLevel = \App\Models\Approver::where('module', 'klaim-berobat')
+            ->where('department_type', $klaim->department_type)
+            ->where('active', true)
+            ->max('approval_level');
+
+        // Add to approval history
+        $history = $klaim->approval_history ?? [];
+        $history[] = [
+            'level' => $currentLevel,
+            'status' => 'approved',
+            'approver_name' => $user->name,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'notes' => null
+        ];
+
+        if ($currentLevel >= $maxLevel) {
+            // Final approval
+            $klaim->update([
+                'status' => 'approved',
+                'final_status' => 'approved',
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+                'approval_history' => $history
+            ]);
+        } else {
+            // Move to next level
+            $klaim->update([
+                'current_approval_level' => $currentLevel + 1,
+                'approval_history' => $history
+            ]);
+        }
+
+        return redirect()->route('klaim.index')->with('success', 'Pengajuan klaim berobat berhasil disetujui.');
     }
 
     /**
@@ -262,20 +309,50 @@ class KlaimBerobatController extends Controller
      */
     public function reject(Request $request, $id)
     {
-        // Check if current user is an approver for klaim-berobat
-        if (!Auth::user()->isApproverFor('klaim-berobat')) {
+        $user = Auth::user();
+        $klaim = KlaimBerobat::findOrFail($id);
+        $currentLevel = $klaim->current_approval_level;
+
+        // Check if user is authorized to reject at current level
+        $isApprover = \App\Models\Approver::where('module', 'klaim-berobat')
+            ->where('department_type', $klaim->department_type)
+            ->where('active', true)
+            ->where('user_id', $user->id)
+            ->where('approval_level', $currentLevel)
+            ->exists();
+
+        if (!$isApprover) {
             return redirect()->route('klaim.index')
-                ->with('error', 'Anda tidak memiliki hak untuk menolak pengajuan klaim berobat.');
+                ->with('error', 'Anda tidak memiliki akses untuk menolak pengajuan ini di level saat ini.');
         }
-        
+
+        if ($klaim->status !== 'pending') {
+            return redirect()->route('klaim.index')
+                ->with('error', 'Pengajuan sudah diproses sebelumnya.');
+        }
+
         $request->validate([
             'rejected_message' => 'required|string|max:1000',
         ]);
 
-        $klaim = KlaimBerobat::findOrFail($id);
-        $klaim->status = 'rejected';
-        $klaim->rejected_message = $request->rejected_message;
-        $klaim->save();
+        // Add to approval history
+        $history = $klaim->approval_history ?? [];
+        $history[] = [
+            'level' => $currentLevel,
+            'status' => 'rejected',
+            'approver_name' => $user->name,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'notes' => $request->rejected_message
+        ];
+
+        $klaim->update([
+            'status' => 'rejected',
+            'final_status' => 'rejected',
+            'rejected_by' => $user->id,
+            'rejected_message' => $request->rejected_message,
+            'rejected_at' => now(),
+            'approval_history' => $history
+        ]);
 
         return redirect()->route('klaim.index')->with('success', 'Pengajuan klaim berobat telah ditolak dengan pesan.');
     }

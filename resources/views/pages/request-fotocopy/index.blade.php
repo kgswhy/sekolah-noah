@@ -39,11 +39,13 @@
                                             <td>{{ $request->tanggal_penggunaan }}</td>
                                             <td>
                                                 @php
-                                                    $jumlahHalaman = json_decode($request->jumlah_halaman);
-                                                    $jumlahDiperlukan = json_decode($request->jumlah_diperlukan);
+                                                    $jumlahHalaman = is_string($request->jumlah_halaman) ? json_decode($request->jumlah_halaman) : $request->jumlah_halaman;
+                                                    $jumlahDiperlukan = is_string($request->jumlah_diperlukan) ? json_decode($request->jumlah_diperlukan) : $request->jumlah_diperlukan;
                                                     $total = 0;
-                                                    for($i = 0; $i < count($jumlahHalaman); $i++) {
-                                                        $total += $jumlahHalaman[$i] * $jumlahDiperlukan[$i];
+                                                    if ($jumlahHalaman && $jumlahDiperlukan) {
+                                                        for($i = 0; $i < count($jumlahHalaman); $i++) {
+                                                            $total += $jumlahHalaman[$i] * $jumlahDiperlukan[$i];
+                                                        }
                                                     }
                                                 @endphp
                                                 {{ $total }} halaman
@@ -130,19 +132,21 @@
                                                                             </thead>
                                                                             <tbody>
                                                                                 @php
-                                                                                    $namaBarang = json_decode($request->nama_barang);
-                                                                                    $jumlahHalaman = json_decode($request->jumlah_halaman);
-                                                                                    $jumlahDiperlukan = json_decode($request->jumlah_diperlukan);
-                                                                                    $keterangan = json_decode($request->keterangan);
+                                                                                    $namaBarang = is_string($request->nama_barang) ? json_decode($request->nama_barang) : $request->nama_barang;
+                                                                                    $jumlahHalaman = is_string($request->jumlah_halaman) ? json_decode($request->jumlah_halaman) : $request->jumlah_halaman;
+                                                                                    $jumlahDiperlukan = is_string($request->jumlah_diperlukan) ? json_decode($request->jumlah_diperlukan) : $request->jumlah_diperlukan;
+                                                                                    $keterangan = is_string($request->keterangan) ? json_decode($request->keterangan) : $request->keterangan;
                                                                                 @endphp
-                                                                                @for($i = 0; $i < count($namaBarang); $i++)
-                                                                                    <tr>
-                                                                                        <td>{{ $namaBarang[$i] }}</td>
-                                                                                        <td>{{ $jumlahHalaman[$i] }}</td>
-                                                                                        <td>{{ $jumlahDiperlukan[$i] }}</td>
-                                                                                        <td>{{ $keterangan[$i] }}</td>
-                                                                                    </tr>
-                                                                                @endfor
+                                                                                @if($namaBarang && is_array($namaBarang))
+                                                                                    @for($i = 0; $i < count($namaBarang); $i++)
+                                                                                        <tr>
+                                                                                            <td>{{ $namaBarang[$i] ?? '-' }}</td>
+                                                                                            <td>{{ $jumlahHalaman[$i] ?? '-' }}</td>
+                                                                                            <td>{{ $jumlahDiperlukan[$i] ?? '-' }}</td>
+                                                                                            <td>{{ $keterangan[$i] ?? '-' }}</td>
+                                                                                        </tr>
+                                                                                    @endfor
+                                                                                @endif
                                                                             </tbody>
                                                                         </table>
                                                                     </div>
@@ -162,23 +166,30 @@
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody>
-                                                                                    @foreach(json_decode($request->approval_history) as $history)
-                                                                                        <tr>
-                                                                                            <td>{{ $history->level }}</td>
-                                                                                            <td>
-                                                                                                @if($history->status === 'approved')
-                                                                                                    <span class="badge badge-success">Approved</span>
-                                                                                                @elseif($history->status === 'rejected')
-                                                                                                    <span class="badge badge-danger">Rejected</span>
-                                                                                                @else
-                                                                                                    <span class="badge badge-warning">Pending</span>
-                                                                                                @endif
-                                                                                            </td>
-                                                                                            <td>{{ $history->approver_name }}</td>
-                                                                                            <td>{{ $history->timestamp }}</td>
-                                                                                            <td>{{ $history->notes ?? '-' }}</td>
-                                                                                        </tr>
-                                                                                    @endforeach
+                                                                                    @php
+                                                                                        $approvalHistory = is_string($request->approval_history) 
+                                                                                            ? json_decode($request->approval_history) 
+                                                                                            : $request->approval_history;
+                                                                                    @endphp
+                                                                                    @if($approvalHistory && is_array($approvalHistory))
+                                                                                        @foreach($approvalHistory as $history)
+                                                                                            <tr>
+                                                                                                <td>{{ $history->level ?? '-' }}</td>
+                                                                                                <td>
+                                                                                                    @if(($history->status ?? '') === 'approved')
+                                                                                                        <span class="badge badge-success">Approved</span>
+                                                                                                    @elseif(($history->status ?? '') === 'rejected')
+                                                                                                        <span class="badge badge-danger">Rejected</span>
+                                                                                                    @else
+                                                                                                        <span class="badge badge-warning">Pending</span>
+                                                                                                    @endif
+                                                                                                </td>
+                                                                                                <td>{{ $history->approver_name ?? '-' }}</td>
+                                                                                                <td>{{ $history->timestamp ?? '-' }}</td>
+                                                                                                <td>{{ $history->notes ?? '-' }}</td>
+                                                                                            </tr>
+                                                                                        @endforeach
+                                                                                    @endif
                                                                                 </tbody>
                                                                             </table>
                                                                         </div>

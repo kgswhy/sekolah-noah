@@ -42,6 +42,9 @@ class PengajuanFotocopyController extends Controller {
             'keterangan.*' => 'required|string|max:255',
         ]);
 
+        // Determine department type based on employee division
+        $departmentType = strtolower($employee->division) === 'akademik' ? 'akademik' : 'non-akademik';
+
         PengajuanFotocopy::create([
             'employee_id' => $employee->id,
             'nama_lengkap' => $employee->full_name,
@@ -59,7 +62,8 @@ class PengajuanFotocopyController extends Controller {
             'jumlah_diperlukan' => $request->jumlah_diperlukan,
             'keterangan' => $request->keterangan,
             'status' => 'pending',
-            'current_approval_level' => 0
+            'current_approval_level' => 1,
+            'department_type' => $departmentType
         ]);
 
         return redirect()->route('request-fotocopy.index')->with('success', 'Pengajuan fotocopy berhasil ditambahkan!');
@@ -127,37 +131,53 @@ class PengajuanFotocopyController extends Controller {
     {
         $user = Auth::user();
         $pengajuanFotocopy = PengajuanFotocopy::findOrFail($id);
+        $currentLevel = $pengajuanFotocopy->current_approval_level;
 
-        // Approval berjenjang: hanya approver di level berikutnya yang bisa approve
-        $nextLevel = $pengajuanFotocopy->current_approval_level + 1;
+        // Check if current user is approver at current level
         $isApprover = \App\Models\Approver::where('module', 'fotocopy')
             ->where('department_type', $pengajuanFotocopy->department_type)
             ->where('active', true)
             ->where('user_id', $user->id)
-            ->where('approval_level', $nextLevel)
+            ->where('approval_level', $currentLevel)
             ->exists();
 
         if (!$isApprover) {
             return redirect()->route('request-fotocopy.index')
-                ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan ini.');
+                ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan ini di level saat ini.');
         }
 
-        // Cek apakah ini approval terakhir
-        $totalLevels = \App\Models\Approver::where('module', 'fotocopy')
+        // Check if this is the final approval level
+        $maxLevel = \App\Models\Approver::where('module', 'fotocopy')
             ->where('department_type', $pengajuanFotocopy->department_type)
             ->where('active', true)
             ->max('approval_level');
 
-        if ($nextLevel >= $totalLevels) {
-            $pengajuanFotocopy->status = 'approved';
-            $pengajuanFotocopy->final_status = 'approved';
-            $pengajuanFotocopy->approved_by = $user->id;
-            $pengajuanFotocopy->approved_at = now();
-        } else {
-            $pengajuanFotocopy->current_approval_level = $nextLevel;
-        }
+        // Add to approval history
+        $history = $pengajuanFotocopy->approval_history ?? [];
+        $history[] = [
+            'level' => $currentLevel,
+            'status' => 'approved',
+            'approver_name' => $user->name,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'notes' => null
+        ];
 
-        $pengajuanFotocopy->save();
+        if ($currentLevel >= $maxLevel) {
+            // Final approval
+            $pengajuanFotocopy->update([
+                'status' => 'approved',
+                'final_status' => 'approved',
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+                'approval_history' => $history
+            ]);
+        } else {
+            // Move to next level
+            $pengajuanFotocopy->update([
+                'current_approval_level' => $currentLevel + 1,
+                'approval_history' => $history
+            ]);
+        }
 
         return redirect()->route('request-fotocopy.index')
             ->with('success', 'Pengajuan fotocopy berhasil disetujui!');
@@ -167,11 +187,19 @@ class PengajuanFotocopyController extends Controller {
     {
         $user = Auth::user();
         $pengajuanFotocopy = PengajuanFotocopy::findOrFail($id);
+        $currentLevel = $pengajuanFotocopy->current_approval_level;
 
-        // Check if user is authorized to reject
-        if (!$user->isApproverFor('fotocopy', 1, $pengajuanFotocopy->employee->department_type)) {
+        // Check if user is authorized to reject at current level
+        $isApprover = \App\Models\Approver::where('module', 'fotocopy')
+            ->where('department_type', $pengajuanFotocopy->department_type)
+            ->where('active', true)
+            ->where('user_id', $user->id)
+            ->where('approval_level', $currentLevel)
+            ->exists();
+
+        if (!$isApprover) {
             return redirect()->route('request-fotocopy.index')
-                ->with('error', 'Anda tidak memiliki akses untuk menolak pengajuan ini.');
+                ->with('error', 'Anda tidak memiliki akses untuk menolak pengajuan ini di level saat ini.');
         }
 
         if ($pengajuanFotocopy->status !== 'pending') {
@@ -183,11 +211,23 @@ class PengajuanFotocopyController extends Controller {
             'rejected_message' => 'required|string|max:255'
         ]);
 
+        // Add to approval history
+        $history = $pengajuanFotocopy->approval_history ?? [];
+        $history[] = [
+            'level' => $currentLevel,
+            'status' => 'rejected',
+            'approver_name' => $user->name,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'notes' => $request->rejected_message
+        ];
+
         $pengajuanFotocopy->update([
             'status' => 'rejected',
+            'final_status' => 'rejected',
             'rejected_by' => $user->id,
             'rejected_message' => $request->rejected_message,
-            'rejected_at' => now()
+            'rejected_at' => now(),
+            'approval_history' => $history
         ]);
 
         return redirect()->route('request-fotocopy.index')

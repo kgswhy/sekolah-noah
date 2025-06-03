@@ -178,6 +178,8 @@ Route::group(['middleware' => 'auth'], function () {
         Route::get('/kurir-mobil/edit/{id}', [OperationalRequestController::class, 'edit'])->name('operasional.edit');
         Route::post('/kurir-mobil/update/{id}', [OperationalRequestController::class, 'update'])->name('operasional.update');
         Route::get('/kurir-mobil/delete/{id}', [OperationalRequestController::class, 'destroy'])->name('operasional.destroy');
+        Route::post('/kurir-mobil/{id}/approve', [OperationalRequestController::class, 'approve'])->name('operasional.approve');
+        Route::post('/kurir-mobil/{id}/reject', [OperationalRequestController::class, 'reject'])->name('operasional.reject');
 
         // Peminjaman Management
         Route::prefix('peminjaman')->group(function () {
@@ -357,6 +359,8 @@ Route::group(['middleware' => 'auth'], function () {
 
     // Permintaan Design
     Route::resource('permintaan-design', PermintaanDesignController::class);
+    Route::post('/permintaan-design/{id}/approve', [PermintaanDesignController::class, 'approve'])->name('permintaan-design.approve');
+    Route::post('/permintaan-design/{id}/reject', [PermintaanDesignController::class, 'reject'])->name('permintaan-design.reject');
 
     // Settings Routes
     Route::prefix('setting')->group(function () {
