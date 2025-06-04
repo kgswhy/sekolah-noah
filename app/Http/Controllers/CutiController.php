@@ -24,23 +24,23 @@ class CutiController extends Controller
 
         // Get all leave requests if user is admin
         if ($user->isAdmin()) {
-            $cutis = Cuti::with('employee')->get();
+            $cutis = Cuti::with(['employee', 'approver', 'rejector'])->get();
         } else {
             // Get the department types this user can approve
             $departmentTypes = $user->approvers()
                 ->where('module', 'cuti')
                 ->where('active', true)
-                ->pluck(column: 'department_type')
+                ->pluck('department_type')
                 ->unique();
 
             // If user is an approver, show only requests from their department type
             if ($departmentTypes->isNotEmpty()) {
-                $cutis = Cuti::with('employee')
+                $cutis = Cuti::with(['employee', 'approver', 'rejector'])
                     ->whereIn('department_type', $departmentTypes)
                     ->get();
             } else {
                 // If user is not an approver, show only their own requests
-                $cutis = Cuti::with('employee')
+                $cutis = Cuti::with(['employee', 'approver', 'rejector'])
                     ->where('employee_id', $user->employee->id)
                     ->get();
             }
@@ -112,8 +112,8 @@ class CutiController extends Controller
             'telepon' => $request->telepon,
             'status' => 'pending',
             'current_approval_level' => 1,
-            'final_status' => null,
             'department_type' => $departmentType,
+            'approval_history' => []
         ]);
 
         return redirect('/cuti')->with('success', 'Cuti berhasil diajukan!');
@@ -127,7 +127,7 @@ class CutiController extends Controller
      */
     public function show($id)
     {
-        $cuti = Cuti::with('employee')->findOrFail($id);
+        $cuti = Cuti::with(['employee', 'approver', 'rejector'])->findOrFail($id);
         return view('pages.cuti.detail', compact('cuti'));
     }
 
@@ -185,6 +185,8 @@ class CutiController extends Controller
             'dokumen' => $dokumenPath,
             'telepon' => $request->telepon,
             'status' => 'pending', // Reset status to pending after update
+            'current_approval_level' => 1,
+            'approval_history' => []
         ]);
 
         return redirect('/cuti')->with('success', 'Cuti berhasil diperbarui!');
@@ -282,31 +284,47 @@ class CutiController extends Controller
         $cuti = Cuti::findOrFail($id);
         $currentLevel = $cuti->current_approval_level;
 
-        // Cek apakah user adalah approver di level ini untuk departemen yang sesuai
+        // Check if user is an approver for this level and department
         if (!$user->isApproverFor('cuti', $currentLevel, $cuti->department_type)) {
             return redirect()->route('cuti.index')
                 ->with('error', 'Anda tidak memiliki hak untuk menyetujui pengajuan cuti di level ini untuk departemen ini.');
         }
 
-        // Hitung jumlah level approval untuk cuti berdasarkan departemen
+        // Get max approval level for this department
         $maxLevel = \App\Models\Approver::where('module', 'cuti')
             ->where('department_type', $cuti->department_type)
             ->where('active', true)
             ->max('approval_level');
 
+        // Add current approval to history
+        $approvalHistory = $cuti->approval_history ?? [];
+        $approvalHistory[] = [
+            'level' => $currentLevel,
+            'user_id' => $user->id,
+            'user_name' => $user->name,
+            'action' => 'approved',
+            'timestamp' => now()->toDateTimeString()
+        ];
+
         if ($currentLevel < $maxLevel) {
-            // Naikkan ke level berikutnya
-            $cuti->current_approval_level = $currentLevel + 1;
-            $cuti->save();
-            return redirect()->route('cuti.index')->with('success', 'Pengajuan cuti naik ke level approval berikutnya.');
+            // Move to next level
+            $cuti->update([
+                'current_approval_level' => $currentLevel + 1,
+                'approval_history' => $approvalHistory
+            ]);
+            return redirect()->route('cuti.index')
+                ->with('success', 'Pengajuan cuti naik ke level approval berikutnya.');
         } else {
-            // Sudah level terakhir, setujui
-            $cuti->status = 'approved';
-            $cuti->final_status = 'approved';
-            $cuti->approved_by = $user->id;
-            $cuti->approved_at = now();
-            $cuti->save();
-            return redirect()->route('cuti.index')->with('success', 'Pengajuan cuti disetujui sepenuhnya.');
+            // Final approval
+            $cuti->update([
+                'status' => 'approved',
+                'final_status' => 'approved',
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+                'approval_history' => $approvalHistory
+            ]);
+            return redirect()->route('cuti.index')
+                ->with('success', 'Pengajuan cuti disetujui sepenuhnya.');
         }
     }
 
@@ -323,7 +341,7 @@ class CutiController extends Controller
         $cuti = Cuti::findOrFail($id);
         $currentLevel = $cuti->current_approval_level;
 
-        // Cek apakah user adalah approver di level ini untuk departemen yang sesuai
+        // Check if user is an approver for this level and department
         if (!$user->isApproverFor('cuti', $currentLevel, $cuti->department_type)) {
             return redirect()->route('cuti.index')
                 ->with('error', 'Anda tidak memiliki hak untuk menolak pengajuan cuti di level ini untuk departemen ini.');
@@ -333,13 +351,27 @@ class CutiController extends Controller
             'rejected_message' => 'required|string|max:1000',
         ]);
 
-        $cuti->status = 'rejected';
-        $cuti->final_status = 'rejected';
-        $cuti->rejected_message = $request->rejected_message;
-        $cuti->rejected_by = $user->id;
-        $cuti->rejected_at = now();
-        $cuti->save();
+        // Add rejection to history
+        $approvalHistory = $cuti->approval_history ?? [];
+        $approvalHistory[] = [
+            'level' => $currentLevel,
+            'user_id' => $user->id,
+            'user_name' => $user->name,
+            'action' => 'rejected',
+            'message' => $request->rejected_message,
+            'timestamp' => now()->toDateTimeString()
+        ];
 
-        return redirect()->route('cuti.index')->with('success', 'Pengajuan cuti telah ditolak.');
+        $cuti->update([
+            'status' => 'rejected',
+            'final_status' => 'rejected',
+            'rejected_message' => $request->rejected_message,
+            'rejected_by' => $user->id,
+            'rejected_at' => now(),
+            'approval_history' => $approvalHistory
+        ]);
+
+        return redirect()->route('cuti.index')
+            ->with('success', 'Pengajuan cuti telah ditolak.');
     }
 }

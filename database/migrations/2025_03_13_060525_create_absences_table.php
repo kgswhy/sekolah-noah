@@ -13,14 +13,12 @@ return new class extends Migration
     {
         Schema::create('absences', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('schedule_id')->unsigned();
+            $table->foreignId('schedule_id')->constrained()->onDelete('cascade');
             $table->time('clock_in');
             $table->time('clock_out');
-            $table->boolean('late');
-            $table->string('status');
+            $table->boolean('late')->default(false);
+            $table->enum('status', ['present', 'late', 'absent'])->default('present');
             $table->timestamps();
-
-            $table->foreign('schedule_id')->references('id')->on('schedules')->onDelete('cascade');
         });
     }
 

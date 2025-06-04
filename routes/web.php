@@ -27,6 +27,8 @@ use App\Http\Controllers\RequestAtkController;
 use App\Http\Controllers\LemburHonorController;
 use App\Http\Controllers\EquipmentLoanController;
 use App\Http\Controllers\PermintaanDesignController;
+use App\Http\Controllers\AbsenceController;
+use App\Http\Controllers\PayrollController;
 
 // Authentication Routes
 Route::get('/login', [PagesController::class, 'loginPage'])->name('login');
@@ -92,7 +94,6 @@ Route::group(['middleware' => 'auth'], function () {
     });
 
     // HR Management
-    Route::get('/absence', [PagesController::class, 'absencePage'])->name('absence.index');
     Route::get('/payroll', [PagesController::class, 'payrollPage'])->name('payroll.index');
     Route::get('/kinerja', [PagesController::class, 'kinerjaPage'])->name('kinerja.index');
 
@@ -385,4 +386,20 @@ Route::group(['middleware' => 'auth'], function () {
         Route::post('/request-atk/{requestAtk}/approve', [RequestAtkController::class, 'approve'])->name('request-atk.approve');
         Route::post('/request-atk/{requestAtk}/reject', [RequestAtkController::class, 'reject'])->name('request-atk.reject');
     });
+
+    // Absence Routes
+    Route::get('/absence', [AbsenceController::class, 'index'])->name('absence.index');
+    Route::post('/absence/import', [AbsenceController::class, 'import'])->name('absence.import');
+    Route::get('/absence/template', [AbsenceController::class, 'template'])->name('absence.template');
+    Route::get('/absence/edit/{id}', [AbsenceController::class, 'edit'])->name('absence.edit');
+    Route::put('/absence/update/{id}', [AbsenceController::class, 'update'])->name('absence.update');
+    Route::delete('/absence/delete/{id}', [AbsenceController::class, 'delete'])->name('absence.delete');
+
+    // Payroll Routes
+    Route::get('/payroll', [PayrollController::class, 'index'])->name('payroll.index');
+    Route::get('/payroll/{salarySlip}/edit', [PayrollController::class, 'edit'])->name('payroll.edit');
+    Route::put('/payroll/{salarySlip}', [PayrollController::class, 'update'])->name('payroll.update');
+    Route::get('/payroll/{salarySlip}/download', [PayrollController::class, 'download'])->name('payroll.download');
+    Route::post('/payroll/generate', [PayrollController::class, 'generate'])->name('payroll.generate');
+    Route::put('/payroll/{salarySlip}/status', [PayrollController::class, 'updateStatus'])->name('payroll.update-status');
 });
